@@ -3,18 +3,29 @@ name = "wasm-agent"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+default-run = "wasm-agent"
 
 [dependencies]
 anyhow = "1"
+blake3 = "1"
+libc = "0.2"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "io-util", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "io-util", "net", "process"] }
+tempfile = "3"
 wasmer = "=7.4.2"
 wasmer-wasix = "=0.704.2"
 
 [dev-dependencies]
 tungstenite = "0.26"
 
+[build-dependencies]
+blake3 = "1"
+
 [profile.dev]
 debug = 0
+
+# Checksums are on every cached-start path, including development builds.
+[profile.dev.package.blake3]
+opt-level = 3

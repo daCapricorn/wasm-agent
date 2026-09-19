@@ -1,0 +1,9 @@
+{
+  "entry": "loop",
+  "modules": {
+    "loop": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/loop.wasm", "routes": ["cli", "state", "reasoner", "tool"]},
+    "state": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/state.wasm", "routes": ["loop"]},
+    "reasoner": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/reasoner-scripted.wasm", "routes": ["loop"]},
+    "tool": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/tool.wasm", "routes": ["loop"]}
+  }
+}

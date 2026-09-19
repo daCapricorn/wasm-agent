@@ -1,0 +1,17 @@
+{
+  "entry": "loop",
+  "modules": {
+    "loop": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/loop.wasm", "routes": ["cli", "state", "reasoner", "tool"]},
+    "state": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/state.wasm", "routes": ["loop"]},
+    "reasoner": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/reasoner-codex.wasm", "routes": ["loop", "codex"]},
+    "tool": {"path": "../modules/agent/target/wasm32-wasmer-wasi/release/tool.wasm", "routes": ["loop"]}
+  },
+  "processes": {
+    "codex": {
+      "command": "codex",
+      "args": ["exec", "--ephemeral", "--ignore-user-config", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never", "-c", "features.shell_tool=false", "-"],
+      "env": ["HOME", "PATH", "CODEX_HOME", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY"],
+      "timeout_seconds": 120
+    }
+  }
+}

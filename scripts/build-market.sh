@@ -8,7 +8,7 @@ if [[ -n "${WASI_SDK_PATH:-}" ]]; then
     export CC_wasm32_wasmer_wasi="$WASI_SDK_PATH/bin/clang"
     export AR_wasm32_wasmer_wasi="$WASI_SDK_PATH/bin/llvm-ar"
 fi
-cd "$root/modules/market"
+cd "$root/modules/${1:-market}"
 if [[ -n "${CARGO_WASIX_BIN:-}" ]]; then
     "$CARGO_WASIX_BIN" wasix build --release --locked
 elif command -v cargo-wasix >/dev/null 2>&1; then

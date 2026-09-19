@@ -2,12 +2,16 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     sync::mpsc,
 };
-use wasmer::Module;
+use wasmer::{Engine, Module};
 use wasmer_wasix::{
     bin_factory::spawn_exec_module,
     os::task::{process::WasiProcess, TaskJoinHandle},
@@ -17,6 +21,8 @@ use wasmer_wasix::{
 };
 
 pub const MAX_EVENT_BYTES: usize = 64 * 1024;
+pub mod composition;
+pub mod module_cache;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
@@ -42,7 +48,26 @@ pub struct Service {
 }
 
 impl Service {
+    /// Send a bounded JSON-line control/message frame to a guest.
+    pub async fn send(&mut self, message: &Value) -> Result<()> {
+        let mut bytes = serde_json::to_vec(message)?;
+        if bytes.len() + 1 > MAX_EVENT_BYTES {
+            bail!("input frame exceeds 64 KiB");
+        }
+        bytes.push(b'\n');
+        self.stdin.write_all(&bytes).await?;
+        Ok(())
+    }
+
     pub async fn start(config: Config) -> Result<Self> {
+        Self::start_with_loader(config, module_cache::load).await
+    }
+
+    /// Alternate loaders must produce a module compatible with the supplied engine.
+    pub async fn start_with_loader(
+        config: Config,
+        loader: impl FnOnce(&Engine, &Path) -> Result<Module> + Send + 'static,
+    ) -> Result<Self> {
         let mut runtime = PluggableRuntime::new(Arc::new(TokioTaskManager::default()));
         if !config.allow_network {
             runtime.set_networking_implementation(UnsupportedVirtualNetworking::default());
@@ -50,12 +75,7 @@ impl Service {
         let runtime: Arc<dyn Runtime + Send + Sync> = Arc::new(runtime);
         let engine = runtime.engine().clone();
         // Compilation is synchronous; keep it off Tokio's async workers.
-        let module = tokio::task::spawn_blocking(move || {
-            let bytes = std::fs::read(&config.module)
-                .with_context(|| format!("read module {}", config.module.display()))?;
-            Module::new(&engine, bytes).context("compile WASM module")
-        })
-        .await??;
+        let module = tokio::task::spawn_blocking(move || loader(&engine, &config.module)).await??;
         let (stdin, guest_stdin) = Pipe::channel();
         let (guest_stdout, stdout) = Pipe::channel();
         let env = WasiEnv::builder("service")
