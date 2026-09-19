@@ -12,6 +12,8 @@ struct Args {
     config: PathBuf,
     #[arg(long)]
     trace: bool,
+    #[arg(long, help = "Print Tau-style agent events while a turn runs")]
+    events: bool,
 }
 
 fn main() -> Result<()> {
@@ -45,7 +47,7 @@ async fn run(args: Args) -> Result<()> {
                 if let Some(text) = queue.pop_front() {
                     next_id += 1;
                     let id = format!("turn-{next_id}");
-                    session.send(Packet::request(&session.entry, &id, "turn", json!({"text":text}))).await?;
+                    session.send(Packet::request(&session.entry, &id, "turn", json!({"text":text, "events":args.events}))).await?;
                     active = Some(id);
                 } else if eof { break; }
             }
@@ -72,8 +74,14 @@ async fn run(args: Args) -> Result<()> {
                 event = session.events.recv() => {
                     let packet = event.context("session ended")??;
                     if active.as_ref() == Some(&packet.id) {
-                        println!("{}", serde_json::to_string(&packet)?);
-                        active = None;
+                        if packet.method == "event" {
+                            if args.events {
+                                eprintln!("event {}", serde_json::to_string(&packet.body)?);
+                            }
+                        } else {
+                            println!("{}", serde_json::to_string(&packet)?);
+                            active = None;
+                        }
                     }
                 }
             }
