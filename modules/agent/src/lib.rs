@@ -95,6 +95,20 @@ pub fn scripted(messages: &[Value]) -> Result<Value> {
             json!({"role":"assistant","content":previous.map(|m| m["content"].clone()).unwrap_or(json!("no previous answer"))}),
         );
     }
+    if text == "unknown" {
+        return Ok(json!({
+            "role":"assistant",
+            "content":null,
+            "tool_calls":[{"id":"missing-1","type":"function","function":{"name":"missing","arguments":"{}"}}]
+        }));
+    }
+    if text == "fail" {
+        return Ok(json!({
+            "role":"assistant",
+            "content":null,
+            "tool_calls":[{"id":"invalid-1","type":"function","function":{"name":"add","arguments":"{\"a\":\"bad\",\"b\":1}"}}]
+        }));
+    }
     let parts: Vec<_> = text.split_whitespace().collect();
     if parts.len() == 3 && parts[0] == "add" {
         let a: f64 = parts[1].parse()?;

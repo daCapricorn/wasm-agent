@@ -34,6 +34,28 @@ async fn turn(session: &mut Session, id: &str, text: &str) -> Packet {
     answer
 }
 
+async fn event_turn(session: &mut Session, id: &str, text: &str) -> (Packet, Vec<String>) {
+    session
+        .send(Packet::request(
+            &session.entry,
+            id,
+            "turn",
+            json!({"text":text, "events":true}),
+        ))
+        .await
+        .unwrap();
+    let mut kinds = Vec::new();
+    loop {
+        let packet = receive(session).await;
+        assert_eq!(packet.id, id);
+        if packet.method == "event" {
+            kinds.push(packet.body["type"].as_str().unwrap().to_owned());
+        } else {
+            return (packet, kinds);
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn independent_wasm_modules_call_tool_and_recall_state() {
     let mut session = Session::start(config("scripted")).await.unwrap();
@@ -52,6 +74,49 @@ async fn independent_wasm_modules_call_tool_and_recall_state() {
         saw_tool |= route.from == "loop" && route.to == "tool" && route.method == "add";
     }
     assert!(saw_tool, "must execute the real tool WASM");
+    session.stop().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tau_style_events_cover_tool_turn_and_error_paths() {
+    let mut session = Session::start(config("scripted")).await.unwrap();
+    let (answer, events) = event_turn(&mut session, "events", "add 2 3").await;
+    assert!(answer.error.is_none(), "{answer:?}");
+    assert_eq!(answer.body["text"], "result: 5.0");
+    assert_eq!(
+        events,
+        [
+            "agent_start",
+            "turn_start",
+            "message_start",
+            "tool_execution_start",
+            "tool_execution_end",
+            "message_start",
+            "message_end",
+            "turn_end",
+            "agent_end",
+        ]
+    );
+
+    let (unknown, unknown_events) = event_turn(&mut session, "unknown", "unknown").await;
+    assert!(unknown.error.is_none(), "{unknown:?}");
+    assert!(unknown.body["text"]
+        .as_str()
+        .unwrap()
+        .contains("unknown tool"));
+    assert!(unknown_events
+        .iter()
+        .any(|kind| kind == "tool_execution_end"));
+
+    let (failed, failed_events) = event_turn(&mut session, "failed-tool", "fail").await;
+    assert!(failed.error.is_none(), "{failed:?}");
+    assert!(failed.body["text"]
+        .as_str()
+        .unwrap()
+        .contains("a must be a number"));
+    assert!(failed_events
+        .iter()
+        .any(|kind| kind == "tool_execution_end"));
     session.stop().await.unwrap();
 }
 

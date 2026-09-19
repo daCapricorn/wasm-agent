@@ -7,9 +7,24 @@ struct Loop {
     sequence: u64,
     turn: String,
     caller: String,
+    events: bool,
 }
 
 impl Loop {
+    fn event(&mut self, kind: &str, data: Value) -> Result<()> {
+        if !self.events {
+            return Ok(());
+        }
+        emit(&Packet {
+            from: String::new(),
+            to: "cli".into(),
+            id: self.turn.clone(),
+            method: "event".into(),
+            body: json!({"type": kind, "data": data}),
+            error: None,
+        })
+    }
+
     fn call(
         &mut self,
         input: &mut impl BufRead,
@@ -59,12 +74,15 @@ impl Loop {
 
     fn run(&mut self, input: &mut impl BufRead, request: &Packet) -> Result<Value> {
         let text = request.body["text"].as_str().context("missing text")?;
+        self.event("agent_start", json!({"turn_id": self.turn.clone(), "text": text}))?;
+        self.event("turn_start", json!({"turn_id": self.turn}))?;
         let loaded = self.call(input, "state", "load", Value::Null, true)?;
         let mut messages = loaded.as_array().context("invalid state")?.clone();
         messages.push(json!({"role":"user","content":text}));
         let tools = json!([{"type":"function","function":{"name":"add","description":"Add two numbers. Use this tool for arithmetic.","parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"additionalProperties":false}}}]);
         let mut tool_count = 0;
-        for _ in 0..8 {
+        for turn in 0..8 {
+            self.event("message_start", json!({"turn": turn + 1}))?;
             let answer = self.call(
                 input,
                 "reasoner",
@@ -94,6 +112,10 @@ impl Loop {
                             .context("arguments must be JSON string")?,
                     )?;
                     // Tool selection and validation belong to this loop module.
+                    self.event(
+                        "tool_execution_start",
+                        json!({"tool_call_id": id, "name": name, "arguments": arguments.clone()}),
+                    )?;
                     let result = if name == "add" {
                         match self.call(input, "tool", name, arguments, true) {
                             Ok(value) => value,
@@ -103,6 +125,10 @@ impl Loop {
                     } else {
                         json!({"error":"unknown tool"})
                     };
+                    self.event(
+                        "tool_execution_end",
+                        json!({"tool_call_id": id, "name": name, "result": result.clone()}),
+                    )?;
                     tool_count += 1;
                     messages.push(
                         json!({"role":"tool","tool_call_id":id,"content":result.to_string()}),
@@ -112,8 +138,11 @@ impl Loop {
                 let content = answer["content"]
                     .as_str()
                     .context("answer missing content")?;
+                self.event("message_end", json!({"turn": turn + 1}))?;
                 // Commit completed turns atomically. Once saving starts, completion wins cancellation.
                 self.call(input, "state", "save", json!(messages), false)?;
+                self.event("turn_end", json!({"tool_calls": tool_count}))?;
+                self.event("agent_end", json!({"messages": messages.len()}))?;
                 return Ok(
                     json!({"text":content,"tool_calls":tool_count,"messages":messages.len()}),
                 );
@@ -129,6 +158,7 @@ fn main() -> Result<()> {
         sequence: 0,
         turn: String::new(),
         caller: String::new(),
+        events: false,
     };
     while let Some(request) = read(&mut input)? {
         if request.method != "turn" {
@@ -136,7 +166,11 @@ fn main() -> Result<()> {
         }
         agent.turn = request.id.clone();
         agent.caller = request.from.clone();
+        agent.events = request.body["events"].as_bool().unwrap_or(false);
         let result = agent.run(&mut input, &request);
+        if let Err(error) = &result {
+            agent.event("error", json!({"message": error.to_string()}))?;
+        }
         if result
             .as_ref()
             .is_err_and(|error| error.to_string() == "host stopped")
