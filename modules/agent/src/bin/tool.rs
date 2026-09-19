@@ -4,6 +4,26 @@ use serde_json::json;
 
 fn main() -> Result<()> {
     serve(|request| {
+        if request.method == "describe" {
+            return Ok(json!([
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "add",
+                        "description": "Add two numbers. Use this tool for arithmetic.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "a": {"type": "number"},
+                                "b": {"type": "number"}
+                            },
+                            "required": ["a", "b"],
+                            "additionalProperties": false
+                        }
+                    }
+                }
+            ]));
+        }
         if request.method != "add" {
             bail!("unknown tool");
         }

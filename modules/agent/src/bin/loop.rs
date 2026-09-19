@@ -79,7 +79,9 @@ impl Loop {
         let loaded = self.call(input, "state", "load", Value::Null, true)?;
         let mut messages = loaded.as_array().context("invalid state")?.clone();
         messages.push(json!({"role":"user","content":text}));
-        let tools = json!([{"type":"function","function":{"name":"add","description":"Add two numbers. Use this tool for arithmetic.","parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"additionalProperties":false}}}]);
+        // Tool modules own their manifest; the loop only dispatches declared names.
+        let tools = self.call(input, "tool", "describe", Value::Null, true)?;
+        let tool_specs = tools.as_array().context("tool manifest must be an array")?;
         let mut tool_count = 0;
         for turn in 0..8 {
             self.event("message_start", json!({"turn": turn + 1}))?;
@@ -116,7 +118,10 @@ impl Loop {
                         "tool_execution_start",
                         json!({"tool_call_id": id, "name": name, "arguments": arguments.clone()}),
                     )?;
-                    let result = if name == "add" {
+                    let declared = tool_specs.iter().any(|tool| {
+                        tool["type"] == "function" && tool["function"]["name"] == name
+                    });
+                    let result = if declared {
                         match self.call(input, "tool", name, arguments, true) {
                             Ok(value) => value,
                             Err(error) if error.to_string() == "cancelled" => return Err(error),

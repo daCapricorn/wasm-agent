@@ -70,10 +70,16 @@ async fn independent_wasm_modules_call_tool_and_recall_state() {
     assert_eq!(recalled.body["text"], answer.body["text"]);
     assert_eq!(recalled.body["messages"], 6);
     let mut saw_tool = false;
+    let mut saw_manifest = false;
     while let Ok(route) = session.traces.try_recv() {
         saw_tool |= route.from == "loop" && route.to == "tool" && route.method == "add";
+        saw_manifest |= route.from == "loop" && route.to == "tool" && route.method == "describe";
     }
     assert!(saw_tool, "must execute the real tool WASM");
+    assert!(
+        saw_manifest,
+        "loop must discover tools from the tool manifest"
+    );
     session.stop().await.unwrap();
 }
 
