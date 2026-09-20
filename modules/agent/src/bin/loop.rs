@@ -91,8 +91,13 @@ impl Loop {
         // Tool modules own their manifest; the loop only dispatches declared names.
         let tools = self.call(input, "tool", "describe", Value::Null, true)?;
         let tool_specs = tools.as_array().context("tool manifest must be an array")?;
+        let max_turns = request.body["max_turns"].as_u64().unwrap_or(8);
+        let max_tool_calls = request.body["max_tool_calls"].as_u64().unwrap_or(4);
+        if !(1..=64).contains(&max_turns) || !(1..=32).contains(&max_tool_calls) {
+            bail!("invalid loop limits");
+        }
         let mut tool_count = 0;
-        for turn in 0..8 {
+        for turn in 0..max_turns {
             self.event("message_start", json!({"turn": turn + 1}))?;
             let answer = self.call(
                 input,
@@ -110,7 +115,7 @@ impl Loop {
                 .and_then(Value::as_array)
                 .filter(|v| !v.is_empty());
             if let Some(calls) = calls {
-                if calls.len() > 4 {
+                if calls.len() as u64 > max_tool_calls {
                     bail!("too many tool calls");
                 }
                 for call in calls {

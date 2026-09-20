@@ -93,6 +93,16 @@ pub fn serve(mut handler: impl FnMut(&Packet) -> Result<Value>) -> Result<()> {
 pub fn scripted(messages: &[Value]) -> Result<Value> {
     let last = messages.last().context("missing messages")?;
     if last["role"] == "tool" {
+        let spinning = messages
+            .iter()
+            .any(|message| message["role"] == "user" && message["content"] == "spin");
+        if spinning {
+            return Ok(json!({
+                "role":"assistant",
+                "content":null,
+                "tool_calls":[{"id":"spin-1","type":"function","function":{"name":"add","arguments":"{\"a\":1,\"b\":1}"}}]
+            }));
+        }
         return Ok(
             json!({"role":"assistant","content":format!("result: {}", last["content"].as_str().unwrap_or(""))}),
         );
@@ -119,6 +129,13 @@ pub fn scripted(messages: &[Value]) -> Result<Value> {
             "role":"assistant",
             "content":null,
             "tool_calls":[{"id":"invalid-1","type":"function","function":{"name":"add","arguments":"{\"a\":\"bad\",\"b\":1}"}}]
+        }));
+    }
+    if text == "spin" {
+        return Ok(json!({
+            "role":"assistant",
+            "content":null,
+            "tool_calls":[{"id":"spin-1","type":"function","function":{"name":"add","arguments":"{\"a\":1,\"b\":1}"}}]
         }));
     }
     let parts: Vec<_> = text.split_whitespace().collect();

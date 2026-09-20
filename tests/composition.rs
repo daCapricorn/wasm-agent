@@ -135,6 +135,38 @@ async fn tau_style_events_cover_tool_turn_and_error_paths() {
     session.stop().await.unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn loop_limits_are_harness_configurable() {
+    let mut session = Session::start(config("scripted")).await.unwrap();
+    session
+        .send(Packet::request(
+            &session.entry,
+            "bounded",
+            "turn",
+            json!({"text":"spin", "max_turns":2}),
+        ))
+        .await
+        .unwrap();
+    let result = receive(&mut session).await;
+    assert!(result
+        .error
+        .unwrap()
+        .contains("reasoning step limit exceeded"));
+
+    session
+        .send(Packet::request(
+            &session.entry,
+            "invalid-limit",
+            "turn",
+            json!({"text":"hello", "max_turns":0}),
+        ))
+        .await
+        .unwrap();
+    let result = receive(&mut session).await;
+    assert!(result.error.unwrap().contains("invalid loop limits"));
+    session.stop().await.unwrap();
+}
+
 fn fixture() -> Composition {
     let mut config = config("codex");
     let process = config.processes.get_mut("codex").unwrap();
