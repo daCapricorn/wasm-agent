@@ -19,6 +19,18 @@ pub struct Packet {
     pub error: Option<String>,
 }
 
+/// Versioned event contract emitted by the portable Agent Core.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentEvent {
+    pub version: u32,
+    pub sequence: u64,
+    pub turn_id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub data: Value,
+}
+
 pub fn read(input: &mut impl BufRead) -> Result<Option<Packet>> {
     let mut line = Vec::new();
     use std::io::Read;

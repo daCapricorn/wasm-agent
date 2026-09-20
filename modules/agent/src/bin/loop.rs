@@ -1,4 +1,4 @@
-use agent_modules::{emit, read, reply, Packet};
+use agent_modules::{emit, read, reply, AgentEvent, Packet};
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use std::io::{self, BufRead};
@@ -8,6 +8,7 @@ struct Loop {
     turn: String,
     caller: String,
     events: bool,
+    event_sequence: u64,
 }
 
 impl Loop {
@@ -15,12 +16,20 @@ impl Loop {
         if !self.events {
             return Ok(());
         }
+        self.event_sequence += 1;
+        let event = AgentEvent {
+            version: 1,
+            sequence: self.event_sequence,
+            turn_id: self.turn.clone(),
+            kind: kind.into(),
+            data,
+        };
         emit(&Packet {
             from: String::new(),
             to: "cli".into(),
             id: self.turn.clone(),
             method: "event".into(),
-            body: json!({"type": kind, "data": data}),
+            body: serde_json::to_value(event)?,
             error: None,
         })
     }
@@ -164,6 +173,7 @@ fn main() -> Result<()> {
         turn: String::new(),
         caller: String::new(),
         events: false,
+        event_sequence: 0,
     };
     while let Some(request) = read(&mut input)? {
         if request.method != "turn" {
@@ -172,6 +182,7 @@ fn main() -> Result<()> {
         agent.turn = request.id.clone();
         agent.caller = request.from.clone();
         agent.events = request.body["events"].as_bool().unwrap_or(false);
+        agent.event_sequence = 0;
         let result = agent.run(&mut input, &request);
         if let Err(error) = &result {
             agent.event("error", json!({"message": error.to_string()}))?;

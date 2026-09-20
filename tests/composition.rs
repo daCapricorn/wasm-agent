@@ -34,7 +34,11 @@ async fn turn(session: &mut Session, id: &str, text: &str) -> Packet {
     answer
 }
 
-async fn event_turn(session: &mut Session, id: &str, text: &str) -> (Packet, Vec<String>) {
+async fn event_turn(
+    session: &mut Session,
+    id: &str,
+    text: &str,
+) -> (Packet, Vec<String>, Vec<u64>) {
     session
         .send(Packet::request(
             &session.entry,
@@ -45,13 +49,17 @@ async fn event_turn(session: &mut Session, id: &str, text: &str) -> (Packet, Vec
         .await
         .unwrap();
     let mut kinds = Vec::new();
+    let mut sequences = Vec::new();
     loop {
         let packet = receive(session).await;
         assert_eq!(packet.id, id);
         if packet.method == "event" {
             kinds.push(packet.body["type"].as_str().unwrap().to_owned());
+            assert_eq!(packet.body["version"], 1);
+            assert_eq!(packet.body["turn_id"], id);
+            sequences.push(packet.body["sequence"].as_u64().unwrap());
         } else {
-            return (packet, kinds);
+            return (packet, kinds, sequences);
         }
     }
 }
@@ -86,7 +94,7 @@ async fn independent_wasm_modules_call_tool_and_recall_state() {
 #[tokio::test(flavor = "multi_thread")]
 async fn tau_style_events_cover_tool_turn_and_error_paths() {
     let mut session = Session::start(config("scripted")).await.unwrap();
-    let (answer, events) = event_turn(&mut session, "events", "add 2 3").await;
+    let (answer, events, sequences) = event_turn(&mut session, "events", "add 2 3").await;
     assert!(answer.error.is_none(), "{answer:?}");
     assert_eq!(answer.body["text"], "result: 5.0");
     assert_eq!(
@@ -103,8 +111,9 @@ async fn tau_style_events_cover_tool_turn_and_error_paths() {
             "agent_end",
         ]
     );
+    assert_eq!(sequences, (1..=9).collect::<Vec<_>>());
 
-    let (unknown, unknown_events) = event_turn(&mut session, "unknown", "unknown").await;
+    let (unknown, unknown_events, _) = event_turn(&mut session, "unknown", "unknown").await;
     assert!(unknown.error.is_none(), "{unknown:?}");
     assert!(unknown.body["text"]
         .as_str()
@@ -114,7 +123,7 @@ async fn tau_style_events_cover_tool_turn_and_error_paths() {
         .iter()
         .any(|kind| kind == "tool_execution_end"));
 
-    let (failed, failed_events) = event_turn(&mut session, "failed-tool", "fail").await;
+    let (failed, failed_events, _) = event_turn(&mut session, "failed-tool", "fail").await;
     assert!(failed.error.is_none(), "{failed:?}");
     assert!(failed.body["text"]
         .as_str()
