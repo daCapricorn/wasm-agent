@@ -24,3 +24,7 @@ target
 .env
 .env.*
 !.env.example
+
+# Project notes and documentation are kept out of feature commits for now.
+*.md
+docs/
